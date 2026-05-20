@@ -1,0 +1,171 @@
+name: ReDsume — Tests BDD (V1 Cypress · V2 Playwright)
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Ce repo public sert uniquement de scheduler CI.
+# Il checkout le repo privé (via PAT) et lance les tests.
+# Le code source privé n'est jamais exposé publiquement.
+# ─────────────────────────────────────────────────────────────────────────────
+
+on:
+  workflow_dispatch:
+
+  schedule:
+    - cron: '0 8  * * 1'   # Lundi    08h00
+    - cron: '0 14 * * 1'   # Lundi    14h00
+    - cron: '0 9  * * 2'   # Mardi    09h00
+    - cron: '0 15 * * 2'   # Mardi    15h00
+    - cron: '0 10 * * 3'   # Mercredi 10h00
+    - cron: '0 16 * * 3'   # Mercredi 16h00
+    - cron: '0 9  * * 4'   # Jeudi    09h00
+    - cron: '0 13 * * 4'   # Jeudi    13h00
+    - cron: '0 17 * * 4'   # Jeudi    17h00
+    - cron: '0 9  * * 5'   # Vendredi 09h00
+    - cron: '0 14 * * 5'   # Vendredi 14h00
+
+jobs:
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # JOB 1 : V1 — Cypress
+  # ───────────────────────────────────────────────────────────────────────────
+  cypress-v1:
+    name: "V1 · Cypress (not @v2-only)"
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout du repo privé
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ secrets.PRIVATE_REPO }}   # ex: youssefkitabrhi/PFE
+          token: ${{ secrets.PRIVATE_REPO_TOKEN }}   # PAT avec accès repo
+
+      - name: Installation de Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Installation des dépendances
+        run: npm ci
+
+      - name: Lancer les tests V1 (Cypress)
+        uses: cypress-io/github-action@v6
+        with:
+          browser: chrome
+          headed: false
+        env:
+          CYPRESS_BASE_URL:            ${{ secrets.CYPRESS_BASE_URL }}
+          CYPRESS_APP_VERSION:         v1
+          CYPRESS_TEST_USER_EMAIL:     ${{ secrets.TEST_USER_EMAIL }}
+          CYPRESS_TEST_USER_FULLNAME:  ${{ secrets.TEST_USER_FULLNAME }}
+          CYPRESS_USER_LOGIN:          ${{ secrets.CYPRESS_USER_LOGIN }}
+          CYPRESS_USER_PASSWORD:       ${{ secrets.CYPRESS_USER_PASSWORD }}
+
+      - name: Upload rapports V1
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: cypress-v1-${{ github.run_number }}
+          path: |
+            cypress/reports/
+            cypress/screenshots/
+          retention-days: 7
+
+      - name: Log du run
+        if: always()
+        run: |
+          echo "Run #${{ github.run_number }} — V1 Cypress — $(date -u)" \
+            >> run-history.log
+
+      - name: Commit du log dans ce repo public
+        if: always()
+        run: |
+          git config user.name  "redsume-ci-bot"
+          git config user.email "ci-bot@redsume.io"
+          git add run-history.log
+          git commit -m "ci: run #${{ github.run_number }} — V1" || echo "Rien à committer"
+          for i in 1 2 3 4 5; do
+            git pull --rebase origin main && git push origin main && break
+            sleep 5
+          done
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # JOB 2 : V2 — Playwright
+  # ───────────────────────────────────────────────────────────────────────────
+  playwright-v2:
+    name: "V2 · Playwright (not @v1-only)"
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout du repo privé
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ secrets.PRIVATE_REPO }}
+          token: ${{ secrets.PRIVATE_REPO_TOKEN }}
+
+      - name: Installation de Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Installation des dépendances
+        run: npm ci
+
+      - name: Installation de Chromium (Playwright)
+        run: npx playwright install chromium --with-deps
+
+      - name: Lancer les tests V2 (Playwright)
+        run: npx cucumber-js --config playwright/cucumber.cjs
+        env:
+          BASE_URL:           ${{ secrets.PLAYWRIGHT_BASE_URL }}
+          TEST_USER_EMAIL:    ${{ secrets.TEST_USER_EMAIL }}
+          TEST_USER_FULLNAME: ${{ secrets.TEST_USER_FULLNAME }}
+          USER_LOGIN:         ${{ secrets.CYPRESS_USER_LOGIN }}
+          USER_PASSWORD:      ${{ secrets.CYPRESS_USER_PASSWORD }}
+
+      - name: Résumé des résultats V2
+        if: always()
+        run: |
+          node - <<'EOF'
+          const fs = require('fs');
+          const path = 'playwright/reports/results.json';
+          if (!fs.existsSync(path)) {
+            fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY,
+              '## V2 Playwright\n\n> ⚠️ Aucun fichier de résultats.\n');
+            process.exit(0);
+          }
+          const results = JSON.parse(fs.readFileSync(path, 'utf8'));
+          let passed = 0, failed = 0, pending = 0;
+          let totalNs = 0;
+          for (const f of results) {
+            for (const s of (f.elements || [])) {
+              if (s.type === 'background') continue;
+              const statuses = (s.steps || []).map(x => x.result?.status || 'skipped');
+              if (statuses.some(x => x === 'failed')) failed++;
+              else if (statuses.some(x => x === 'pending' || x === 'undefined')) pending++;
+              else passed++;
+              for (const st of (s.steps || [])) totalNs += st.result?.duration || 0;
+            }
+          }
+          const dur = (totalNs / 1e9).toFixed(1) + 's';
+          const ok  = failed === 0 ? '✅ Passing' : '❌ Failing';
+          const tbl = [
+            '## V2 Playwright Results',
+            '',
+            '| Status | Passed | Failed | Pending | Duration |',
+            '|--------|--------|--------|---------|----------|',
+            `| ${ok} | ${passed} | ${failed} | ${pending} | ${dur} |`,
+          ].join('\n');
+          fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, tbl);
+          console.log(tbl);
+          EOF
+
+      - name: Upload rapports V2
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: playwright-v2-${{ github.run_number }}
+          path: playwright/reports/
+          retention-days: 7
