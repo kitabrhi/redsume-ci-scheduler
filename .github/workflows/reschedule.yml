@@ -1,0 +1,83 @@
+name: Weekly Schedule Randomizer
+
+# Chaque lundi à 6h00 UTC → génère de nouveaux horaires aléatoires
+# et met à jour run-tests.yml pour la semaine
+
+on:
+  schedule:
+    - cron: '0 6 * * 1'   # Lundi 06h00 UTC
+  workflow_dispatch:
+
+jobs:
+  reschedule:
+    name: Générer les horaires de la semaine
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.SCHEDULER_PAT }}
+
+      - name: Générer les nouveaux crons aléatoires
+        run: |
+          node - <<'EOF'
+          const fs = require('fs');
+
+          // Génère `count` créneaux uniques entre min et max (UTC)
+          // avec un écart minimum de `gap` heures entre eux
+          function randomSlots(count, min, max, gap) {
+            const slots = [];
+            let tries = 0;
+            while (slots.length < count && tries < 300) {
+              const h = Math.floor(Math.random() * (max - min + 1)) + min;
+              if (slots.every(s => Math.abs(s - h) >= gap)) slots.push(h);
+              tries++;
+            }
+            return slots.sort((a, b) => a - b);
+          }
+
+          const days = [
+            { num: 1, name: 'Lundi',    count: 2, min: 7, max: 16, gap: 3 },
+            { num: 2, name: 'Mardi',    count: 2, min: 7, max: 16, gap: 3 },
+            { num: 3, name: 'Mercredi', count: 2, min: 7, max: 16, gap: 3 },
+            { num: 4, name: 'Jeudi',    count: 3, min: 7, max: 16, gap: 2 },
+            { num: 5, name: 'Vendredi', count: 2, min: 7, max: 16, gap: 3 },
+          ];
+
+          let cronLines = '';
+          let summary = '## Nouveau planning CI\n\n';
+          summary += '| Jour | Heures UTC |\n|------|------------|\n';
+
+          for (const day of days) {
+            const hours = randomSlots(day.count, day.min, day.max, day.gap);
+            const heures = hours.map(h => `${String(h).padStart(2,'0')}h00`).join(', ');
+            summary += `| ${day.name} | ${heures} |\n`;
+            for (const h of hours) {
+              const pad = String(h).padStart(2);
+              cronLines += `    - cron: '0 ${pad} * * ${day.num}'   # ${day.name} ${String(h).padStart(2,'0')}h00\n`;
+            }
+          }
+
+          // Mise à jour de run-tests.yml
+          let content = fs.readFileSync('.github/workflows/run-tests.yml', 'utf8');
+          content = content.replace(
+            /  schedule:\n(    - cron:.*\n)+/,
+            `  schedule:\n${cronLines}`
+          );
+          fs.writeFileSync('.github/workflows/run-tests.yml', content);
+
+          // Résumé dans GitHub Actions
+          fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, summary);
+          console.log('✅ Nouveau planning généré :\n' + cronLines);
+          EOF
+
+      - name: Commit et push du nouveau planning
+        run: |
+          git config user.name  "kitabrhi"
+          git config user.email "kitabrhi.youssef.1@gmail.com"
+          git add .github/workflows/run-tests.yml
+          git commit -m "ci: planning semaine du $(date -u '+%d/%m/%Y')" || echo "Aucun changement"
+          git push origin main
+        env:
+          GITHUB_TOKEN: ${{ secrets.SCHEDULER_PAT }}
