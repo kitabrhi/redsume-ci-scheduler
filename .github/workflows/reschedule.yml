@@ -1,7 +1,8 @@
 name: Weekly Schedule Randomizer
 
-# Chaque lundi à 6h00 UTC → génère de nouveaux horaires aléatoires
-# et met à jour run-tests.yml pour la semaine
+# Chaque lundi à 6h00 UTC → génère un planning 100% aléatoire pour la semaine
+# - Nombre de slots variable par jour (1 à 5)
+# - Samedi inclus aléatoirement (~40% de chance)
 
 on:
   schedule:
@@ -19,17 +20,16 @@ jobs:
         with:
           token: ${{ secrets.SCHEDULER_PAT }}
 
-      - name: Générer les nouveaux crons aléatoires
+      - name: Générer le planning aléatoire
         run: |
           node - <<'EOF'
           const fs = require('fs');
 
-          // Génère `count` créneaux uniques entre min et max (UTC)
-          // avec un écart minimum de `gap` heures entre eux
+          // Génère `count` créneaux uniques entre min et max avec écart minimum `gap`
           function randomSlots(count, min, max, gap) {
             const slots = [];
             let tries = 0;
-            while (slots.length < count && tries < 300) {
+            while (slots.length < count && tries < 500) {
               const h = Math.floor(Math.random() * (max - min + 1)) + min;
               if (slots.every(s => Math.abs(s - h) >= gap)) slots.push(h);
               tries++;
@@ -37,27 +37,62 @@ jobs:
             return slots.sort((a, b) => a - b);
           }
 
-          const days = [
-            { num: 1, name: 'Lundi',    count: 2, min: 7, max: 16, gap: 3 },
-            { num: 2, name: 'Mardi',    count: 2, min: 7, max: 16, gap: 3 },
-            { num: 3, name: 'Mercredi', count: 2, min: 7, max: 16, gap: 3 },
-            { num: 4, name: 'Jeudi',    count: 3, min: 7, max: 16, gap: 2 },
-            { num: 5, name: 'Vendredi', count: 2, min: 7, max: 16, gap: 3 },
+          // Nombre aléatoire entre min et max inclus
+          function randInt(min, max) {
+            return Math.floor(Math.random() * (max - min + 1)) + min;
+          }
+
+          // Jours fixes Lundi→Vendredi avec count aléatoire
+          const weekdays = [
+            { num: 1, name: 'Lundi'    },
+            { num: 2, name: 'Mardi'    },
+            { num: 3, name: 'Mercredi' },
+            { num: 4, name: 'Jeudi'    },
+            { num: 5, name: 'Vendredi' },
           ];
 
+          // Samedi : présent ~40% du temps
+          const includeSaturday = Math.random() < 0.40;
+
+          const days = weekdays.map(d => ({
+            ...d,
+            count: randInt(1, 5),   // 1 à 5 slots par jour
+            min: 7,
+            max: 17,
+            gap: 2,                 // au moins 2h d'écart
+          }));
+
+          if (includeSaturday) {
+            days.push({
+              num: 6,
+              name: 'Samedi',
+              count: randInt(1, 3),  // 1 à 3 slots le samedi
+              min: 8,
+              max: 14,
+              gap: 2,
+            });
+          }
+
           let cronLines = '';
-          let summary = '## Nouveau planning CI\n\n';
-          summary += '| Jour | Heures UTC |\n|------|------------|\n';
+          let summary = '## Planning CI — semaine du ' + new Date().toLocaleDateString('fr-FR') + '\n\n';
+          summary += '| Jour | Créneaux | Heures UTC |\n|------|----------|------------|\n';
 
           for (const day of days) {
             const hours = randomSlots(day.count, day.min, day.max, day.gap);
             const heures = hours.map(h => `${String(h).padStart(2,'0')}h00`).join(', ');
-            summary += `| ${day.name} | ${heures} |\n`;
+            summary += `| ${day.name} | ${hours.length} | ${heures} |\n`;
             for (const h of hours) {
               const pad = String(h).padStart(2);
               cronLines += `    - cron: '0 ${pad} * * ${day.num}'   # ${day.name} ${String(h).padStart(2,'0')}h00\n`;
             }
           }
+
+          const total = days.reduce((acc, d) => {
+            const slots = randomSlots(d.count, d.min, d.max, d.gap);
+            return acc + slots.length;
+          }, 0);
+
+          summary += `\n> Samedi : ${includeSaturday ? '✅ inclus' : '❌ absent cette semaine'}\n`;
 
           // Mise à jour de run-tests.yml
           let content = fs.readFileSync('.github/workflows/run-tests.yml', 'utf8');
@@ -67,9 +102,10 @@ jobs:
           );
           fs.writeFileSync('.github/workflows/run-tests.yml', content);
 
-          // Résumé dans GitHub Actions
+          // Résumé GitHub Actions
           fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, summary);
-          console.log('✅ Nouveau planning généré :\n' + cronLines);
+          console.log('✅ Planning généré :\n' + cronLines);
+          console.log(includeSaturday ? '📅 Samedi inclus cette semaine' : '📅 Pas de samedi cette semaine');
           EOF
 
       - name: Commit et push du nouveau planning
