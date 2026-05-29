@@ -39,8 +39,8 @@ jobs:
       - name: Checkout du repo privé
         uses: actions/checkout@v4
         with:
-          repository: ${{ secrets.PRIVATE_REPO }}   # ex: youssefkitabrhi/PFE
-          token: ${{ secrets.PRIVATE_REPO_TOKEN }}   # PAT avec accès repo
+          repository: ${{ secrets.PRIVATE_REPO }}
+          token: ${{ secrets.PRIVATE_REPO_TOKEN }}
 
       - name: Installation de Node.js 20
         uses: actions/setup-node@v4
@@ -52,6 +52,7 @@ jobs:
         run: npm ci
 
       - name: Lancer les tests V1 (Cypress)
+        id: tests_v1
         uses: cypress-io/github-action@v6
         with:
           browser: chrome
@@ -74,25 +75,30 @@ jobs:
             cypress/screenshots/
           retention-days: 7
 
-      - name: Log du run
+      # ── Log commit → repo PUBLIC (scheduler) avec PAT ──────────────────
+      - name: Checkout du repo scheduler (public)
         if: always()
-        run: |
-          echo "Run #${{ github.run_number }} — V1 Cypress — $(date -u)" \
-            >> run-history.log
+        uses: actions/checkout@v4
+        with:
+          repository: kitabrhi/redsume-ci-scheduler
+          token: ${{ secrets.PRIVATE_REPO_TOKEN }}
+          path: scheduler
 
-      - name: Commit du log dans ce repo public
+      - name: Commit du log dans le repo scheduler
         if: always()
         run: |
-          git config user.name  "kitabrhi"
+          cd scheduler
+          STATUS="${{ steps.tests_v1.outcome }}"
+          ICON=$( [ "$STATUS" = "success" ] && echo "pass" || echo "FAIL" )
+          echo "Run #${{ github.run_number }} — V1 Cypress [$ICON] — $(date -u)" >> run-history.log
+          git config user.name  "Youssef Kitabrhi"
           git config user.email "kitabrhi.youssef.1@gmail.com"
           git add run-history.log
-          git commit -m "ci: run #${{ github.run_number }} — V1" || echo "Rien à committer"
+          git commit -m "ci: run #${{ github.run_number }} — V1 Cypress [$ICON]" || echo "Nothing to commit"
           for i in 1 2 3 4 5; do
             git pull --rebase origin main && git push origin main && break
             sleep 5
           done
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   # ───────────────────────────────────────────────────────────────────────────
   # JOB 2 : V2 — Playwright
@@ -121,6 +127,7 @@ jobs:
         run: npx playwright install chromium --with-deps
 
       - name: Lancer les tests V2 (Playwright)
+        id: tests_v2
         run: npx cucumber-js --config playwright/cucumber.cjs
         env:
           BASE_URL:           ${{ secrets.PLAYWRIGHT_BASE_URL }}
@@ -173,3 +180,28 @@ jobs:
           name: playwright-v2-${{ github.run_number }}
           path: playwright/reports/
           retention-days: 7
+
+      # ── Log commit → repo PUBLIC (scheduler) avec PAT ──────────────────
+      - name: Checkout du repo scheduler (public)
+        if: always()
+        uses: actions/checkout@v4
+        with:
+          repository: kitabrhi/redsume-ci-scheduler
+          token: ${{ secrets.PRIVATE_REPO_TOKEN }}
+          path: scheduler
+
+      - name: Commit du log dans le repo scheduler
+        if: always()
+        run: |
+          cd scheduler
+          STATUS="${{ steps.tests_v2.outcome }}"
+          ICON=$( [ "$STATUS" = "success" ] && echo "pass" || echo "FAIL" )
+          echo "Run #${{ github.run_number }} — V2 Playwright [$ICON] — $(date -u)" >> run-history.log
+          git config user.name  "Youssef Kitabrhi"
+          git config user.email "kitabrhi.youssef.1@gmail.com"
+          git add run-history.log
+          git commit -m "ci: run #${{ github.run_number }} — V2 Playwright [$ICON]" || echo "Nothing to commit"
+          for i in 1 2 3 4 5; do
+            git pull --rebase origin main && git push origin main && break
+            sleep 5
+          done
