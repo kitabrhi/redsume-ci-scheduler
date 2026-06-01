@@ -75,13 +75,13 @@ jobs:
             cypress/screenshots/
           retention-days: 7
 
-      # ── Log commit → repo PUBLIC (scheduler) avec PAT ──────────────────
+      # ── Log commit → repo PUBLIC (scheduler) avec SCHEDULER_PAT ──────────
       - name: Checkout du repo scheduler (public)
         if: always()
         uses: actions/checkout@v4
         with:
           repository: kitabrhi/redsume-ci-scheduler
-          token: ${{ secrets.PRIVATE_REPO_TOKEN }}
+          token: ${{ secrets.SCHEDULER_PAT }}
           path: scheduler
 
       - name: Commit du log dans le repo scheduler
@@ -181,13 +181,13 @@ jobs:
           path: playwright/reports/
           retention-days: 7
 
-      # ── Log commit → repo PUBLIC (scheduler) avec PAT ──────────────────
+      # ── Log commit → repo PUBLIC (scheduler) avec SCHEDULER_PAT ──────────
       - name: Checkout du repo scheduler (public)
         if: always()
         uses: actions/checkout@v4
         with:
           repository: kitabrhi/redsume-ci-scheduler
-          token: ${{ secrets.PRIVATE_REPO_TOKEN }}
+          token: ${{ secrets.SCHEDULER_PAT }}
           path: scheduler
 
       - name: Commit du log dans le repo scheduler
