@@ -10,22 +10,20 @@ on:
   workflow_dispatch:
 
   schedule:
-    - cron: '0  9 * * 1'   # Lundi 09h00
-    - cron: '0  7 * * 2'   # Mardi 07h00
-    - cron: '0 12 * * 2'   # Mardi 12h00
-    - cron: '0 15 * * 2'   # Mardi 15h00
+    - cron: '0 11 * * 1'   # Lundi 11h00
+    - cron: '0 13 * * 1'   # Lundi 13h00
+    - cron: '0 15 * * 1'   # Lundi 15h00
     - cron: '0 17 * * 2'   # Mardi 17h00
     - cron: '0  8 * * 3'   # Mercredi 08h00
-    - cron: '0 10 * * 3'   # Mercredi 10h00
-    - cron: '0 12 * * 3'   # Mercredi 12h00
-    - cron: '0 14 * * 3'   # Mercredi 14h00
-    - cron: '0 17 * * 3'   # Mercredi 17h00
-    - cron: '0 14 * * 4'   # Jeudi 14h00
-    - cron: '0 16 * * 4'   # Jeudi 16h00
-    - cron: '0  9 * * 5'   # Vendredi 09h00
-    - cron: '0 14 * * 5'   # Vendredi 14h00
+    - cron: '0 10 * * 4'   # Jeudi 10h00
+    - cron: '0 13 * * 4'   # Jeudi 13h00
+    - cron: '0 15 * * 4'   # Jeudi 15h00
+    - cron: '0 17 * * 4'   # Jeudi 17h00
+    - cron: '0  8 * * 5'   # Vendredi 08h00
+    - cron: '0 15 * * 5'   # Vendredi 15h00
     - cron: '0 17 * * 5'   # Vendredi 17h00
-    - cron: '0  8 * * 6'   # Samedi 08h00
+    - cron: '0 11 * * 6'   # Samedi 11h00
+    - cron: '0 14 * * 6'   # Samedi 14h00
 
 jobs:
 
